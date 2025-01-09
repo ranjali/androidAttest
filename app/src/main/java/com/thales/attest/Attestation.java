@@ -1,11 +1,9 @@
 package com.thales.attest;
 
 import android.content.Context;
-import android.util.Log;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
+import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
@@ -31,15 +29,16 @@ public class Attestation {
     public static void test(Context context) throws Exception {
         PublicKey key =  (PublicKey) Util.getKey(false);
         byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
-        Log.d(TAG, "credPubKey: " + Util.bytesToHex(credentialPublicKeyCbor) );
+        Util.logString(TAG, "credPubKey: " + Util.bytesToHex(credentialPublicKeyCbor) );
 
         byte[] atData = constructAttestedCredentialData(key, credentialPublicKeyCbor);
-        Log.d(TAG, "atData: " + Util.bytesToHex(atData) );
+        Util.logString(TAG, "atData: " + Util.bytesToHex(atData) );
 
         byte[] authData = constructAuthenticatorData(context, atData);
-        Log.d(TAG, "authData: " + Util.bytesToHex(authData) );
+        Util.logString(TAG, "authData: " + Util.bytesToHex(authData) );
 
         byte[] clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
+        Util.logString(TAG, "clientDataHash: " + Util.bytesToHex(clientDataHash));
         byte[] attest = constructWebAuthnCbor(Util.KEY_ALIAS, authData, clientDataHash);
         String attestStr = Util.bytesToHex(attest);
         Util.logLongString("attest", attestStr);
@@ -52,8 +51,8 @@ public class Attestation {
         BigInteger exponent = rsaKeySpec.getPublicExponent();
 
         // Convert modulus and exponent to byte arrays
-        byte[] nBytes = modulus.toByteArray();
-        byte[] eBytes = exponent.toByteArray();
+        byte[] nBytes = Util.toUnsignedByteArray(modulus);
+        byte[] eBytes = Util.toUnsignedByteArray(exponent);
 
         // Parse JSON into a Map
         Map<Integer, Object> data = new LinkedHashMap<>();
@@ -62,11 +61,26 @@ public class Attestation {
         data.put(-1, nBytes);
         data.put(-2, eBytes);
 
-        // Create an ObjectMapper for CBOR
-        ObjectMapper cborMapper = new ObjectMapper(new CBORFactory());
+        CBORFactory cborFactory = new CBORFactory();
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+        // Create CBOR generator with fixed size start
+        try (CBORGenerator cborGenerator = cborFactory.createGenerator(byteArrayOutputStream)) {
+            // Write start object with size (fixed length)
+            cborGenerator.writeStartObject(data.size()); // Pass the fixed length (map size)
+
+            // Write key-value pairs to the CBOR object
+            for (Map.Entry<Integer, Object> entry : data.entrySet()) {
+                cborGenerator.writeFieldId(entry.getKey());
+                cborGenerator.writeObject(entry.getValue());
+            }
+
+            // End the object
+            cborGenerator.writeEndObject();
+        }
 
         // Convert the updated Map to CBOR
-        byte[] cborBytes = cborMapper.writeValueAsBytes(data);
+        byte[] cborBytes = byteArrayOutputStream.toByteArray();
 
         return cborBytes;
     }
@@ -86,7 +100,7 @@ public class Attestation {
         byte[] credentialIdLengthBytes = credentialIdLengthBuffer.array();
 
         // Construct the Attested Credential Data
-        ByteBuffer buffer = ByteBuffer.allocate(16 + 2 + credentialId.length + publicKey.getEncoded().length);
+        ByteBuffer buffer = ByteBuffer.allocate(16 + 2 + credentialId.length + credentialPublicKey.length);
         buffer.put(aaguid);                // AAGUID (16 bytes)
         buffer.put(credentialIdLengthBytes); // Credential ID length (2 bytes)
         buffer.put(credentialId);          // Credential ID (32 bytes, derived from SHA-256 of the publicKey)
@@ -140,16 +154,15 @@ public class Attestation {
         signature.update(authenticatorData);
         signature.update(clientDataHash);
         byte[] signedData = signature.sign();
+        Util.logString(TAG, "sign: " + Util.bytesToHex(signedData));
 
         // Convert x5c (certificate chain) to a list of DER-encoded certificates
         List<byte[]> x5cList = new ArrayList<>();
         for (Certificate cert : certificateChain) {
-            x5cList.add(cert.getEncoded());
+            byte[] certBytes = cert.getEncoded();
+            x5cList.add(certBytes);
+            Util.logString(TAG, "cert: " + Util.bytesToHex(certBytes));
         }
-
-        // CBOR factory and mapper
-        CBORFactory cborFactory = new CBORFactory();
-        ObjectMapper cborMapper = new ObjectMapper(cborFactory);
 
         // Create attestation statement
         Map<String, Object> attStmt = new LinkedHashMap<>();
@@ -163,13 +176,51 @@ public class Attestation {
         webAuthnObject.put("attStmt", attStmt);
         webAuthnObject.put("authData", authenticatorData);
 
-        // Serialize to CBOR
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        try (JsonGenerator generator = cborFactory.createGenerator(outputStream)) {
-            cborMapper.writeValue(generator, webAuthnObject);
+        // Create CBOR factory and object mapper
+        CBORFactory cborFactory = new CBORFactory();
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+        // Create CBOR generator
+        try (CBORGenerator cborGenerator = cborFactory.createGenerator(byteArrayOutputStream)) {
+            // Write start object without specifying size
+            cborGenerator.writeStartObject(webAuthnObject.size());
+
+            // Write simple key-value pairs
+            for (Map.Entry<String, Object> entry : webAuthnObject.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+
+                cborGenerator.writeFieldName(key);
+                if (value instanceof Map) {
+                    cborGenerator.writeStartObject(attStmt.size());
+                    for (Map.Entry<String, Object> subEntry : ((Map<String, Object>) value).entrySet()) {
+                        cborGenerator.writeFieldName(subEntry.getKey());
+                        Object subValue = subEntry.getValue();
+                        if (subValue instanceof List) {
+                            List<byte[]> subValueList = (List<byte[]>) subValue;
+                            // Handle nested array
+                            cborGenerator.writeStartArray(new ArrayList<byte[]>(), subValueList.size());
+                            for (byte[] x5cVal : subValueList) {
+                                cborGenerator.writeBinary(x5cVal);
+                            }
+                            cborGenerator.writeEndArray();
+                        } else {
+                            cborGenerator.writeObject(subValue);
+                        }
+                    }
+                    cborGenerator.writeEndObject();
+                } else {
+                    // Handle normal key-value pairs
+                    cborGenerator.writeObject(value);
+                }
+            }
+
+            // End the main object
+            cborGenerator.writeEndObject();
         }
 
-        return outputStream.toByteArray();
+        // Output the CBOR encoded byte array
+        return byteArrayOutputStream.toByteArray();
     }
 
 }

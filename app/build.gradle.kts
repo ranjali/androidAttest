@@ -61,11 +61,11 @@ dependencies {
     implementation(libs.androidx.material3)
 
     // Jackson core libraries
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2") // Replace with the latest version
-    implementation("com.fasterxml.jackson.core:jackson-core:2.15.2") // Replace with the latest version
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2") // Replace with the latest version
+    implementation("com.fasterxml.jackson.core:jackson-core:2.18.2") // Replace with the latest version
 
     // Jackson CBOR module
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.15.2") // Replace with the latest version
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.18.2") // Replace with the latest version
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

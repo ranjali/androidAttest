@@ -5,6 +5,7 @@ import android.security.keystore.KeyProperties;
 import android.util.Log;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyPair;
@@ -15,6 +16,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.spec.RSAKeyGenParameterSpec;
+import java.util.Arrays;
 
 public class Util {
 
@@ -23,6 +25,15 @@ public class Util {
 
     private static String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
+    public static byte[] toUnsignedByteArray(BigInteger bigInt) {
+        byte[] byteArray = bigInt.toByteArray();
+        if (byteArray[0] == 0x00 && byteArray.length > 1) {
+            // Remove the leading sign byte
+            return Arrays.copyOfRange(byteArray, 1, byteArray.length);
+        }
+        return byteArray;
+    }
+
     public static void logLongString(String tag, String longString) {
         final int maxLogLength = 4000; // Logcat's maximum string length
         for (int i = 0; i < longString.length(); i += maxLogLength) {
@@ -30,6 +41,11 @@ public class Util {
             Log.d(tag, longString.substring(i, end));
         }
     }
+
+    public static void logString(String tag, String str) {
+        Log.d(tag, str);
+    }
+
     public static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {
