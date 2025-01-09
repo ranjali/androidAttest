@@ -156,6 +156,8 @@ public class Attestation {
         byte[] signedData = signature.sign();
         Util.logString(TAG, "sign: " + Util.bytesToHex(signedData));
 
+        Util.verifyAndroidAttestation(signedData);
+
         // Convert x5c (certificate chain) to a list of DER-encoded certificates
         List<byte[]> x5cList = new ArrayList<>();
         for (Certificate cert : certificateChain) {

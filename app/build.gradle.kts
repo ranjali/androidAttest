@@ -67,6 +67,9 @@ dependencies {
     // Jackson CBOR module
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.18.2") // Replace with the latest version
 
+    implementation("com.webauthn4j:webauthn4j-core:0.28.4.RELEASE")
+    implementation("com.webauthn4j:webauthn4j-appattest:0.28.4.RELEASE")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
