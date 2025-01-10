@@ -7,6 +7,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
@@ -38,11 +39,11 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPublicKey;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +61,7 @@ public class Attestation {
         byte[] clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
         Util.logString(TAG, "clientDataHash: " + Util.bytesToHex(clientDataHash));
 
-//        testParsinn(Util.KEY_ALIAS);
+//        verifyAttestationExtensionData(Util.KEY_ALIAS);
 
         byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
         Util.logString(TAG, "credPubKey: " + Util.bytesToHex(credentialPublicKeyCbor) );
@@ -77,7 +78,23 @@ public class Attestation {
 //        Util.logLongString("attest", attestStr);
 
         byte[] reverseCBOR = Util.hexToBytes(attestStr);
-        reverseCBOR(reverseCBOR);
+        reverseCBORAndVerifyExtensionAndChain(reverseCBOR);
+
+        /**
+         * Verify that sig is a valid signature over the concatenation of authenticatorData and clientDataHash
+         *
+         * using the public key in the first certificate in x5c with the algorithm specified in alg.
+         */
+        boolean signatureVerificationStatus = verifySignature(reverseCBOR, clientDataHash);
+        Util.logString(TAG, "Verification status: " + signatureVerificationStatus);
+
+        /**
+         * Verify that the public key in the first certificate in x5c matches the
+         *
+         * credentialPublicKey in the attestedCredentialData in authenticatorData.
+         */
+        boolean verifyPublicKeyCredentialsData = verifyCredentialPublicKeyMatch(reverseCBOR);
+        Util.logString(TAG, "Verify publicKey Credentials ddata: " + verifyPublicKeyCredentialsData);
     }
 
     public static byte[] createCredentialPublicKeyCbor(PublicKey rsaPublicKey) throws Exception {
@@ -361,7 +378,7 @@ public class Attestation {
         }
     }
 
-    private static void testParsinn(Certificate[] certificateChain) throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
+    private static void verifyAttestationExtensionData(Certificate[] certificateChain) throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
         // Load the Android Keystore
 //        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
 //        keyStore.load(null);
@@ -470,7 +487,7 @@ public class Attestation {
         }
     }
 
-    public static void reverseCBOR(byte[] cborData) throws Exception {
+    public static void reverseCBORAndVerifyExtensionAndChain(byte[] cborData) throws Exception {
         // Create CBOR factory and object mapper
         CBORFactory cborFactory = new CBORFactory();
         ObjectMapper objectMapper = new ObjectMapper(cborFactory);
@@ -511,7 +528,7 @@ public class Attestation {
             System.out.println("Certificate Serial Number: " + x509Cert.getSerialNumber());
         }
 
-        testParsinn(certificateChain);
+        verifyAttestationExtensionData(certificateChain);
 
         // Verify the certificate chain
         if (verifyCertificateChain(certificateChain)) {
@@ -557,5 +574,165 @@ public class Attestation {
             e.printStackTrace();
             return false;
         }
+    }
+
+    public static Map<String, Object> parseCbor(byte[] cborData) throws IOException {
+        CBORFactory cborFactory = new CBORFactory();
+        ObjectMapper objectMapper = new ObjectMapper(cborFactory);
+        return objectMapper.readValue(cborData, Map.class);
+    }
+
+    public static boolean verifySignature(byte[] cborData, byte[] clientDataHash) throws Exception {
+        Map<String, Object> webAuthnObject = parseCbor(cborData);
+
+        // Extract fields from the CBOR object
+        byte[] authenticatorData = (byte[]) webAuthnObject.get("authData");
+        Map<String, Object> attStmt = (Map<String, Object>) webAuthnObject.get("attStmt");
+        List<byte[]> x5c = (List<byte[]>) attStmt.get("x5c");
+        byte[] signature = (byte[]) attStmt.get("sig");
+        int alg = (int) attStmt.get("alg");
+
+        // Step 1: Concatenate authenticatorData and clientDataHash
+        ByteArrayOutputStream dataToVerify = new ByteArrayOutputStream();
+        dataToVerify.write(authenticatorData);
+        dataToVerify.write(clientDataHash);
+        byte[] dataForSignatureVerification = dataToVerify.toByteArray();
+
+        // Step 2: Extract the public key from the first certificate in x5c
+        PublicKey publicKey = extractPublicKeyFromCertificate(x5c.get(0));
+        // Step 3: Initialize the signature verifier based on the algorithm
+        Signature signatureVerifier = Signature.getInstance("SHA256withRSA/PSS");
+        signatureVerifier.initVerify(publicKey);
+        signatureVerifier.update(dataForSignatureVerification);
+
+        // Step 4: Verify the signature
+        return signatureVerifier.verify(signature);
+    }
+
+    public static PublicKey extractPublicKeyFromCertificate(byte[] certBytes) throws Exception {
+        CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+        ByteArrayInputStream certStream = new ByteArrayInputStream(certBytes);
+        X509Certificate certificate = (X509Certificate) certificateFactory.generateCertificate(certStream);
+        return certificate.getPublicKey();
+    }
+
+    public static boolean verifyCredentialPublicKeyMatch(byte[] cborData) throws Exception {
+        // Parse the CBOR data to get the WebAuthn object
+        Map<String, Object> webAuthnObject = parseCbor(cborData);
+
+        // Extract fields from the CBOR object
+        byte[] authenticatorData = (byte[]) webAuthnObject.get("authData");
+        Map<String, Object> attStmt = (Map<String, Object>) webAuthnObject.get("attStmt");
+        List<byte[]> x5c = (List<byte[]>) attStmt.get("x5c");
+
+        byte[] extractedPublicKeyDataFromAuthenticationData = extractPublicKeyFromAuthenticatorData(authenticatorData);
+
+        // Extract public key from the first certificate in x5c
+        PublicKey publicKey = extractPublicKeyFromCertificate(x5c.get(0));
+        byte[] credentialPublicKey = Util.sha256(publicKey.getEncoded());  // The public key in encoded form (usually DER)
+
+        // Log the public key from the certificate for debugging
+        System.out.println("Public key from certificate (DER): " + Util.bytesToHex(credentialPublicKey));
+
+        // Extract the Attested Credential Data (last part of authenticatorData)
+//        int rpIdHashLength = 32;  // SHA-256 hash length (rpIdHash)
+//        int flagsLength = 1;      // flags length
+//        int signCountLength = 4;  // signCount length
+//
+//        ByteBuffer buffer = ByteBuffer.wrap(authenticatorData);
+//
+//        // Skip rpIdHash, flags, and signCount
+//        buffer.position(rpIdHashLength + flagsLength + signCountLength);
+//
+//        // Read the length of the Credential ID (2 bytes)
+//        short credentialIdLength = buffer.getShort();
+//
+//        // Skip the Credential ID (credentialIdLength bytes)
+//        byte[] credentialId = new byte[credentialIdLength];
+//        buffer.get(credentialId);
+//
+//        // Read the Credential Public Key (this will be the remainder of the buffer)
+//        byte[] credentialPublicKeyFromAuthData = new byte[buffer.remaining()];
+//        buffer.get(credentialPublicKeyFromAuthData);
+
+        // Log the extracted credential public key from authenticatorData for debugging
+        System.out.println("Public key from authenticator data: " + Util.bytesToHex(extractedPublicKeyDataFromAuthenticationData));
+
+        // Compare the extracted credential public key from the authenticatorData with the provided one
+        //boolean match = Arrays.equals(extractedPublicKeyDataFromAuthenticationData, credentialPublicKey);
+        RSAPublicKey publicKeyFromCbor = extractPublicKeyFromCbor(extractedPublicKeyDataFromAuthenticationData);
+
+        // Compare the modulus and exponent of both keys
+        boolean match =  publicKeyFromCbor.getModulus().equals(((RSAPublicKey) publicKey).getModulus()) &&
+                publicKeyFromCbor.getPublicExponent().equals(((RSAPublicKey) publicKey).getPublicExponent());
+        // Log the result for debugging
+        System.out.println("Public key match: " + match);
+
+        return match;
+    }
+
+    // Method to extract the public key from Authenticator Data
+    public static byte[] extractPublicKeyFromAuthenticatorData(byte[] authenticatorData) throws Exception {
+        // 1. Extract the rpIdHash (32 bytes) and skip it
+        int rpIdHashLength = 32;  // SHA-256 hash length (rpIdHash)
+        int flagsLength = 1;      // flags length
+        int signCountLength = 4;  // signCount length
+
+        ByteBuffer buffer = ByteBuffer.wrap(authenticatorData);
+
+        // Skip rpIdHash, flags, and signCount
+        buffer.position(rpIdHashLength + flagsLength + signCountLength);
+
+        // 2. Read the Attested Credential Data (this will be the remaining part of the buffer)
+        byte[] attestedCredentialData = new byte[buffer.remaining()];
+        buffer.get(attestedCredentialData);
+
+        // 3. Parse Attested Credential Data
+        ByteBuffer attestedBuffer = ByteBuffer.wrap(attestedCredentialData);
+
+        // Skip AAGUID (16 bytes)
+        byte[] aaguid = new byte[16];
+        attestedBuffer.get(aaguid);
+
+        // Skip the Credential ID Length (2 bytes)
+        byte[] credentialIdShort = new byte[2];
+        attestedBuffer.get(credentialIdShort); // This will be the length of the Credential ID (2 bytes)
+
+        // Skip the Credential ID (its length is given by the 2-byte Credential ID Length)
+        short credentialIdLength = ByteBuffer.wrap(credentialIdShort).getShort();// Get the length of the Credential ID
+        byte[] credentialId = new byte[credentialIdLength];
+        attestedBuffer.get(credentialId);
+
+        // The remaining part of the Attested Credential Data is the Credential Public Key
+        byte[] credentialPublicKey = new byte[attestedBuffer.remaining()];
+        attestedBuffer.get(credentialPublicKey);
+
+        // Return the extracted public key bytes
+        return credentialPublicKey;
+    }
+
+    // Method to decode CBOR and extract the raw RSA public key
+    public static RSAPublicKey extractPublicKeyFromCbor(byte[] cborData) throws Exception {
+        CBORFactory cborFactory = new CBORFactory();
+        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(cborData);
+
+        // Use ObjectMapper to parse the CBOR data into a JsonNode
+        ObjectMapper objectMapper = new ObjectMapper(cborFactory);
+        JsonNode rootNode = objectMapper.readTree(byteArrayInputStream);
+
+        // Extract the modulus (n) and exponent (e) from the CBOR structure
+        byte[] modulusBytes = rootNode.get("-1").binaryValue();
+        byte[] exponentBytes = rootNode.get("-2").binaryValue();
+
+        // Convert the modulus and exponent into BigInteger
+        BigInteger modulus = new BigInteger(1, modulusBytes);  // 1 for unsigned BigInteger
+        BigInteger exponent = new BigInteger(1, exponentBytes);  // 1 for unsigned BigInteger
+
+        // Create and return the RSAPublicKey
+        RSAPublicKey rsaPublicKey = (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(
+                new RSAPublicKeySpec(modulus, exponent)
+        );
+
+        return rsaPublicKey;
     }
 }
