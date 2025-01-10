@@ -8,6 +8,15 @@ espressoCore = "3.6.1"
 lifecycleRuntimeKtx = "2.8.6"
 activityCompose = "1.9.3"
 composeBom = "2023.08.00"
+bouncyCastle = "1.78.1"
+appcompat = "1.7.0"
+material = "1.12.0"
+protobuf = "4.27.2"
+guava = "33.4.0-jre"
+auto = "1.11.0"
+gson = "2.11.0"
+errorprone = "2.29.0"
+okhttp = "4.12.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,6 +33,17 @@ androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+bouncycastle-bcpkix-jdk180n = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncyCastle" }
+bouncycastle-bcprov-jdk180n = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncyCastle" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobuf" }
+guava-jre = {group = "com.google.guava", name = "guava", version.ref = "guava" }
+google-auto = {group = "com.google.auto.value", name = "auto-value", version.ref = "auto" }
+google-auto-annotations = {group = "com.google.auto.value", name = "auto-value-annotations", version.ref = "auto" }
+google-gson = {group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+errorprone = { group = "com.google.errorprone", name = "error_prone_annotations", version.ref = "errorprone" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

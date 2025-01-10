@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.thales.attest"
-        minSdk = 24
+        minSdk = 34
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -45,6 +45,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
 }
@@ -66,6 +67,17 @@ dependencies {
 
     // Jackson CBOR module
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.18.2") // Replace with the latest version
+
+    implementation(libs.bouncycastle.bcpkix.jdk180n)
+    implementation(libs.bouncycastle.bcprov.jdk180n)
+    implementation(libs.protobuf.javalite)
+    implementation(libs.guava.jre)
+    api(libs.google.auto.annotations)
+//    api(libs.google.auto.factory)
+    annotationProcessor(libs.google.auto)
+    implementation(libs.google.gson)
+    implementation(libs.errorprone)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -54,6 +54,24 @@ public class Util {
         return sb.toString();
     }
 
+    public static byte[] hexToBytes(String hex) {
+        // Ensure the input string has an even length
+        if (hex == null || hex.length() % 2 != 0) {
+            throw new IllegalArgumentException("Hex string must have an even length.");
+        }
+
+        int length = hex.length() / 2;
+        byte[] bytes = new byte[length];
+
+        for (int i = 0; i < length; i++) {
+            // Get each pair of hex digits (2 chars)
+            int byteValue = Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+            bytes[i] = (byte) byteValue;
+        }
+
+        return bytes;
+    }
+
     public static byte[] sha256(byte[] data) throws Exception {
         // Compute SHA-256 hash of the public key bytes
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
