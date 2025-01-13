@@ -5,7 +5,21 @@ import android.content.Context;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
 
+import com.google.protobuf.ByteString;
+import com.webauthn4j.converter.util.CborConverter;
+import com.webauthn4j.converter.util.ObjectConverter;
+import com.webauthn4j.data.attestation.AttestationObject;
+import com.webauthn4j.data.client.challenge.Challenge;
+import com.webauthn4j.server.CoreServerProperty;
+import com.webauthn4j.util.Base64UrlUtil;
+import com.webauthn4j.verifier.CoreRegistrationObject;
+import com.webauthn4j.verifier.attestation.statement.androidkey.AndroidKeyAttestationStatementVerifier;
+
+import org.jetbrains.annotations.NotNull;
+
+
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -41,7 +55,14 @@ public class Attestation {
         Util.logString(TAG, "clientDataHash: " + Util.bytesToHex(clientDataHash));
         byte[] attest = constructWebAuthnCbor(Util.KEY_ALIAS, authData, clientDataHash);
         String attestStr = Util.bytesToHex(attest);
-        Util.logLongString("attest", attestStr);
+
+//        Util.logLongString("attest", attestStr);
+
+        try {
+            webAuth4JParseCBOR(attest, clientDataHash, context);
+        } catch (IOException e) {
+            System.out.println(e);
+        }
     }
 
     public static byte[] createCredentialPublicKeyCbor(PublicKey rsaPublicKey) throws Exception {
@@ -166,7 +187,7 @@ public class Attestation {
 
         // Create attestation statement
         Map<String, Object> attStmt = new LinkedHashMap<>();
-        attStmt.put("alg", -37); // RSA PSS (RSASSA-PSS using SHA-256, alg value -37 in COSE)
+        attStmt.put("alg", -257); // RSA PSS (RSASSA-PSS using SHA-256, alg value -37 in COSE)
         attStmt.put("sig", signedData);
         attStmt.put("x5c", x5cList);
 
@@ -221,6 +242,23 @@ public class Attestation {
 
         // Output the CBOR encoded byte array
         return byteArrayOutputStream.toByteArray();
+    }
+
+    public static void webAuth4JParseCBOR(byte[] cborData, byte[] clientDataHash, Context context) throws IOException {
+        ObjectConverter objectConverter = new ObjectConverter();
+        CborConverter cborConverter = objectConverter.getCborConverter();
+        //When
+        AttestationObject result = cborConverter.readValue(cborData, AttestationObject.class);
+        int a = 0;
+
+        CoreRegistrationObject registrationObject = new CoreRegistrationObject(result, cborData, clientDataHash, new CoreServerProperty(context.getPackageName(), new Challenge() {
+            @Override
+            public @NotNull byte[] getValue() {
+                return CLIENT_DATA.getBytes(StandardCharsets.UTF_8);
+            }
+        }));
+        LocalAndroidKeyAttestationStatementVerifier target = new LocalAndroidKeyAttestationStatementVerifier();
+        target.verify(registrationObject);
     }
 
 }
