@@ -36,7 +36,7 @@ class MainActivity : FragmentActivity() {
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier, context: FragmentActivity) {
     Text(
-        text = "Hello $name! " + Attestation.test(context),
+        text = "Hello $name! " + MastercardAttestation.test(context),
         modifier = modifier
     )
 }

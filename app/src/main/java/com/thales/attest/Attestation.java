@@ -3,6 +3,8 @@ package com.thales.attest;
 import static com.thales.attest.Util.bytesToHex;
 
 import android.content.Context;
+import android.util.Base64;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.biometric.BiometricPrompt;
@@ -103,30 +105,6 @@ public class Attestation {
         byte[] cborBytes = byteArrayOutputStream.toByteArray();
 
         return cborBytes;
-    }
-
-    // Function to construct Attested Credential Data
-    public static byte[] constructAttestedCredentialData(PublicKey publicKey, byte[] credentialPublicKey) throws Exception {
-        // Compute the credentialId as the SHA-256 hash of the encoded publicKey
-        byte[] credentialId = Util.sha256(publicKey.getEncoded());
-
-        // AAGUID is set to 16 bytes of 0
-        byte[] aaguid = new byte[16];
-
-        // Credential ID length (2 bytes)
-        short credentialIdLength = (short) credentialId.length;
-        ByteBuffer credentialIdLengthBuffer = ByteBuffer.allocate(2);
-        credentialIdLengthBuffer.putShort(credentialIdLength);
-        byte[] credentialIdLengthBytes = credentialIdLengthBuffer.array();
-
-        // Construct the Attested Credential Data
-        ByteBuffer buffer = ByteBuffer.allocate(16 + 2 + credentialId.length + credentialPublicKey.length);
-        buffer.put(aaguid);                // AAGUID (16 bytes)
-        buffer.put(credentialIdLengthBytes); // Credential ID length (2 bytes)
-        buffer.put(credentialId);          // Credential ID (32 bytes, derived from SHA-256 of the publicKey)
-        buffer.put(credentialPublicKey); // Credential Public Key (encoded form of the publicKey)
-
-        return buffer.array();
     }
 
     public static byte[] constructAuthenticatorData(Context context, byte[] credentialData) throws Exception {
