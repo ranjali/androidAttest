@@ -21,7 +21,7 @@ import java.util.Arrays;
 public class Util {
 
     public static final String ANDROID_KEYSTORE = "AndroidKeyStore";
-    public static final String KEY_ALIAS = "alias2";
+    public static final String KEY_ALIAS = "alias3";
 
     private static String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
