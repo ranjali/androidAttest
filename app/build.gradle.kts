@@ -70,7 +70,6 @@ dependencies {
 
 
     implementation("com.webauthn4j:webauthn4j-core:0.28.4.RELEASE")
-    implementation("com.webauthn4j:webauthn4j-appattest:0.28.4.RELEASE")
 
 
     testImplementation(libs.junit)

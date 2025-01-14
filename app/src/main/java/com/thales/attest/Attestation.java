@@ -5,15 +5,12 @@ import android.content.Context;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
 
-import com.google.protobuf.ByteString;
 import com.webauthn4j.converter.util.CborConverter;
 import com.webauthn4j.converter.util.ObjectConverter;
 import com.webauthn4j.data.attestation.AttestationObject;
 import com.webauthn4j.data.client.challenge.Challenge;
 import com.webauthn4j.server.CoreServerProperty;
-import com.webauthn4j.util.Base64UrlUtil;
 import com.webauthn4j.verifier.CoreRegistrationObject;
-import com.webauthn4j.verifier.attestation.statement.androidkey.AndroidKeyAttestationStatementVerifier;
 
 import org.jetbrains.annotations.NotNull;
 
