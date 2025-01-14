@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier, context: Context) {
     Text(
-        text = "Hello $name! " + Attestation.test(context),
+        text = "Hello $name! " + MastercardAttestation.test(context),
         modifier = modifier
     )
 }
