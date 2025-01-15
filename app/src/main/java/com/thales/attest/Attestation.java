@@ -61,7 +61,6 @@ public class Attestation {
         byte[] clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
         Util.logString(TAG, "clientDataHash: " + Util.bytesToHex(clientDataHash));
 
-//        parseAndVerifyAttestationExtensionData(Util.KEY_ALIAS);
 
         byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
         Util.logString(TAG, "credPubKey: " + Util.bytesToHex(credentialPublicKeyCbor) );
@@ -139,6 +138,11 @@ public class Attestation {
          */
         boolean verifyPublicKeyCredentialsData = verifyCredentialPublicKeyMatch(attestationObjectBytes);
         Util.logString(TAG, "Verify publicKey Credentials ddata: " + verifyPublicKeyCredentialsData);
+
+        /**
+         * Compare rpId from authenticator Data to original rpId
+         */
+        extractAndCompareReplyIdFromAuthenticatorData(attestationObjectBytes, context);
     }
 
 
@@ -537,7 +541,7 @@ public class Attestation {
         // Log the extracted credential public key from authenticatorData for debugging
         System.out.println("Public key from authenticator data: " + Util.bytesToHex(extractedPublicKeyDataFromAuthenticationData));
 
-        RSAPublicKey publicKeyFromCbor = extractPublicKeyFromCbor(extractedPublicKeyDataFromAuthenticationData);
+        RSAPublicKey publicKeyFromCbor = extractRSAPublicKeyFromCbor(extractedPublicKeyDataFromAuthenticationData);
 
         // Compare the modulus and exponent of both keys
         boolean match =  publicKeyFromCbor.getModulus().equals(((RSAPublicKey) publicKey).getModulus()) &&
@@ -577,6 +581,30 @@ public class Attestation {
         ByteArrayInputStream certStream = new ByteArrayInputStream(certBytes);
         X509Certificate certificate = (X509Certificate) certificateFactory.generateCertificate(certStream);
         return certificate.getPublicKey();
+    }
+
+    public static void extractAndCompareReplyIdFromAuthenticatorData(byte[] cborData, Context context) throws Exception {
+        // Parse the CBOR data to get the WebAuthn object
+        Map<String, Object> webAuthnObject = parseCbor(cborData);
+
+        // Extract fields from the CBOR object
+        byte[] authenticatorData = (byte[]) webAuthnObject.get("authData");
+
+        int rpIdHashLength = 32;  // SHA-256 hash length (rpIdHash)
+        int flagsLength = 1;      // flags length
+        int signCountLength = 4;  // signCount length
+
+        ByteBuffer buffer = ByteBuffer.wrap(authenticatorData);
+
+        // Extract rpIdHash (first 32 bytes)
+        byte[] rpIdHashExtracted = new byte[rpIdHashLength];
+        buffer.get(rpIdHashExtracted);
+
+        String packageName = context.getPackageName();
+        byte[] rpIdHash = Util.sha256(packageName.getBytes());
+        if (!Arrays.equals(rpIdHashExtracted, rpIdHash)) {
+            System.out.println("Attestation challenge doesn't match.");
+        }
     }
 
     // Method to extract the public key from Authenticator Data
@@ -620,7 +648,7 @@ public class Attestation {
     }
 
     // Method to decode CBOR and extract the raw RSA public key
-    public static RSAPublicKey extractPublicKeyFromCbor(byte[] cborData) throws Exception {
+    public static RSAPublicKey extractRSAPublicKeyFromCbor(byte[] cborData) throws Exception {
         CBORFactory cborFactory = new CBORFactory();
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(cborData);
 
