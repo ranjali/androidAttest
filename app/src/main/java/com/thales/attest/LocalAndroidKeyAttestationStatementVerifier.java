@@ -12,7 +12,10 @@ import com.webauthn4j.verifier.attestation.statement.AbstractStatementVerifier;
 import com.webauthn4j.verifier.attestation.statement.androidkey.KeyDescriptionVerifier;
 import com.webauthn4j.verifier.exception.BadAttestationStatementException;
 import com.webauthn4j.verifier.exception.BadSignatureException;
+import com.webauthn4j.verifier.exception.KeyDescriptionValidationException;
 import com.webauthn4j.verifier.exception.PublicKeyMismatchException;
+import com.webauthn4j.verifier.internal.asn1.ASN1Primitive;
+import com.webauthn4j.verifier.internal.asn1.ASN1Structure;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -22,6 +25,7 @@ import java.security.PublicKey;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 
 public class LocalAndroidKeyAttestationStatementVerifier extends AbstractStatementVerifier<AndroidKeyAttestationStatement> {
 
@@ -63,9 +67,22 @@ public class LocalAndroidKeyAttestationStatementVerifier extends AbstractStateme
         }
 
         byte[] clientDataHash = registrationObject.getClientDataHash();
+        X509Certificate certificate = attestationStatement.getX5c().getEndEntityAttestationCertificate().getCertificate();
+        ASN1Structure keyDescription = extractKeyDescription(certificate);
+        byte[] attestationChallenge = ((ASN1Primitive)keyDescription.get(4)).getValue();
+        ASN1Structure teeEnforced = (ASN1Structure)keyDescription.get(7);
         keyDescriptionVerifier.verify(attestationStatement.getX5c().getEndEntityAttestationCertificate().getCertificate(), clientDataHash, teeEnforcedOnly);
 
         return AttestationType.BASIC;
+    }
+
+    @NotNull ASN1Structure extractKeyDescription(@NotNull X509Certificate x509Certificate) {
+        byte[] attestationExtensionBytes = x509Certificate.getExtensionValue("1.3.6.1.4.1.11129.2.1.17");
+        if (attestationExtensionBytes == null) {
+            throw new KeyDescriptionValidationException("KeyDescription must not be null");
+        } else {
+            return ASN1Primitive.parse(attestationExtensionBytes).getValueAsASN1Structure();
+        }
     }
 
     void verifyAttestationStatementNotNull(AndroidKeyAttestationStatement attestationStatement) {
