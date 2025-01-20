@@ -57,7 +57,7 @@ public class Attestation {
         byte[] attest = constructWebAuthnCbor(Util.KEY_ALIAS, authData, clientDataHash);
         String attestStr = Util.bytesToHex(attest);
 
-//        Util.logLongString("attest", attestStr);
+        Util.logLongString("attest", attestStr);
 
         try {
             webAuth4JParseCBOR(attest, clientDataHash, context);
