@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.thales.attest"
-        minSdk = 24
+        minSdk = 30
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -66,6 +66,7 @@ dependencies {
 
     // Jackson CBOR module
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.18.2") // Replace with the latest version
+    implementation("androidx.biometric:biometric:1.1.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

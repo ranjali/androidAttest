@@ -75,7 +75,7 @@ public class Util {
                     .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                     .setAlgorithmParameterSpec(new RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
                     .setAttestationChallenge(sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8)))
-//                    .setUserAuthenticationRequired(true)
+                    .setUserAuthenticationRequired(true)
                     ;
 
             kpg.initialize(builder.build());
