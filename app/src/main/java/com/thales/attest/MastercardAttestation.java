@@ -4,8 +4,6 @@ import android.content.Context;
 import android.security.keystore.KeyProperties;
 import android.util.Log;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
 
@@ -29,7 +27,7 @@ public class MastercardAttestation {
 
     public static String TAG = "att2_Mastercard";
 
-    private static String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
+    private static final String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
 
     public static void test(Context context) throws Exception {
@@ -177,6 +175,7 @@ public class MastercardAttestation {
         // Perform ECDSA signature using SHA-256 with PSS padding
         Signature signature = Signature.getInstance("SHA256withECDSA");
         signature.initSign(privateKey);
+        signature.update(authenticatorData);
         signature.update(clientDataHash);
         byte[] signedData = signature.sign();
 
