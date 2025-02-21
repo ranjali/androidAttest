@@ -2,6 +2,7 @@ package com.thales.attest;
 
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.util.Base64;
 import android.util.Log;
 
 import java.io.IOException;
@@ -89,5 +90,10 @@ public class Util {
             }
             return keyStore.getCertificate(KEY_ALIAS).getPublicKey();
         }
+    }
+    public static String prepareDeviceCertificate(byte[] devicePublicKey) {
+        return "-----BEGIN CERTIFICATE-----\n" +
+                Base64.encodeToString(devicePublicKey,Base64.DEFAULT)
+                + "\n-----END CERTIFICATE-----";
     }
 }

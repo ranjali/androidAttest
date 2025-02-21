@@ -2,9 +2,7 @@ package com.thales.attest;
 
 import static com.thales.attest.Util.bytesToHex;
 
-import android.app.Activity;
 import android.content.Context;
-import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.biometric.BiometricPrompt;
@@ -18,8 +16,10 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyStore;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -156,20 +156,12 @@ public class Attestation {
 
     public static void authenticateAndSign(FragmentActivity context) {
         Executor executor = ContextCompat.getMainExecutor(context);
-
-//        try {
-//            // Load the Keystore and initialize the Signature
-//            KeyStore keyStore = KeyStore.getInstance(Util.ANDROID_KEYSTORE);
-//            keyStore.load(null);
-//            PrivateKey privateKey = (PrivateKey) keyStore.getKey(Util.KEY_ALIAS, null);
-//
-//            signature = Signature.getInstance("SHA256withRSA/PSS");
-//            signature.initSign(privateKey);
-//
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//            return;
-//        }
+        try {
+            signature = Signature.getInstance("SHA256withRSA/PSS");
+            signature.initSign((PrivateKey) Util.getKey(true));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
         // Attach the Signature to a CryptoObject
         BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(signature);
@@ -238,7 +230,7 @@ public class Attestation {
         for (Certificate cert : certificateChain) {
             byte[] certBytes = cert.getEncoded();
             x5cList.add(certBytes);
-            Util.logString(TAG, "cert: " + bytesToHex(certBytes));
+           System.out.println(Util.prepareDeviceCertificate(certBytes));
         }
 
         // Create attestation statement
