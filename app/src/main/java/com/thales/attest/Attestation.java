@@ -157,19 +157,19 @@ public class Attestation {
     public static void authenticateAndSign(FragmentActivity context) {
         Executor executor = ContextCompat.getMainExecutor(context);
 
-        try {
-            // Load the Keystore and initialize the Signature
-            KeyStore keyStore = KeyStore.getInstance(Util.ANDROID_KEYSTORE);
-            keyStore.load(null);
-            PrivateKey privateKey = (PrivateKey) keyStore.getKey(Util.KEY_ALIAS, null);
-
-            signature = Signature.getInstance("SHA256withRSA/PSS");
-            signature.initSign(privateKey);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
+//        try {
+//            // Load the Keystore and initialize the Signature
+//            KeyStore keyStore = KeyStore.getInstance(Util.ANDROID_KEYSTORE);
+//            keyStore.load(null);
+//            PrivateKey privateKey = (PrivateKey) keyStore.getKey(Util.KEY_ALIAS, null);
+//
+//            signature = Signature.getInstance("SHA256withRSA/PSS");
+//            signature.initSign(privateKey);
+//
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return;
+//        }
 
         // Attach the Signature to a CryptoObject
         BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(signature);
@@ -215,7 +215,7 @@ public class Attestation {
 
     public static void constructWebAuthnCbor(BiometricPrompt.AuthenticationResult result) throws Exception {
         // Load the Android Keystore
-        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        KeyStore keyStore = KeyStore.getInstance(Util.ANDROID_KEYSTORE);
         keyStore.load(null);
 
         // Retrieve the certificate chain
