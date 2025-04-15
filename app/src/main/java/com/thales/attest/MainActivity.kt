@@ -30,13 +30,15 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+        Attestation.test(this@MainActivity)
     }
+
 }
 
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier, context: FragmentActivity) {
     Text(
-        text = "Hello $name! " + MastercardAttestation.test(context),
+        text = "Hello $name! ",
         modifier = modifier
     )
 }

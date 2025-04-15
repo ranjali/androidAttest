@@ -1,5 +1,7 @@
 package com.thales.attest;
 
+import static com.thales.attest.Attestation.TAG;
+
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -19,7 +21,6 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.security.spec.ECGenParameterSpec;
@@ -32,8 +33,6 @@ public class Util {
     public static final String KEY_ALIAS = "alias2";
 
     public static final String KEY_ALIAS_MASTERCARD = "alias3";
-
-    private static String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
     public static byte[] toUnsignedByteArray(BigInteger bigInt) {
         byte[] byteArray = bigInt.toByteArray();
@@ -100,7 +99,8 @@ public class Util {
                     .setDigests(KeyProperties.DIGEST_SHA256)
                     .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                     .setAlgorithmParameterSpec(new RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
-                    .setAttestationChallenge(sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8)))
+                    .setAttestationChallenge(sha256(Attestation.CLIENT_DATA.getBytes(StandardCharsets.UTF_8)))
+                    .setUserAuthenticationValidityDurationSeconds(0)
                     .setUserAuthenticationRequired(true)
                     ;
 
@@ -127,7 +127,7 @@ public class Util {
                     .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
                     .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
                     // Only permit the private key to be used if the user authenticated
-                    .setAttestationChallenge(sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8)))
+                    .setAttestationChallenge(sha256(MastercardAttestation.CLIENT_DATA.getBytes(StandardCharsets.UTF_8)))
                     .build();
 
             // Initialize the key generator with the specified parameters
@@ -163,6 +163,8 @@ public class Util {
     public static byte[] constructAttestedCredentialData(PublicKey publicKey, byte[] credentialPublicKey) throws Exception {
         // Compute the credentialId as the SHA-256 hash of the encoded publicKey
         byte[] credentialId = Util.sha256(publicKey.getEncoded());
+
+        Util.logString(TAG, "credentialId: " + bytesToHex(credentialId) );
 
         // AAGUID is set to 16 bytes of 0
         byte[] aaguid = new byte[16];

@@ -4,6 +4,11 @@ import android.content.Context;
 import android.security.keystore.KeyProperties;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentActivity;
+
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
 
@@ -22,15 +27,20 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 public class MastercardAttestation {
 
     public static String TAG = "att2_Mastercard";
 
-    private static final String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
+    private static byte[] authData;
+
+    private static byte[] clientDataHash;
+
+    public static final String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
 
-    public static void test(Context context) throws Exception {
+    public static void test(FragmentActivity context) throws Exception {
         Util.getAppSigningKey(context);
         PublicKey key =  (PublicKey) Util.generateECDSAKeyPair(false);
         byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
@@ -43,24 +53,88 @@ public class MastercardAttestation {
 
         Util.logLongString(TAG,"atData Hex( "+Util.bytesToHex(atData)+" )");
 
-        byte[] authData = constructAuthenticatorData(context, atData);
+        authData = constructAuthenticatorData(context, atData);
         Log.d(TAG, "authData: " + Util.bytesToHex(authData) );
 
         Util.logLongString(TAG,"authData Hex( "+Util.bytesToHex(authData)+" )");
 
-        byte[] clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
-        byte[] attest = constructWebAuthnCbor(Util.KEY_ALIAS_MASTERCARD, authData, clientDataHash);
-        String attestStr = Util.bytesToHex(attest);
-        Util.logLongString("attest", attestStr);
-
-        Util.logLongString(TAG, "attest Hex( "+attestStr+" )");
-
-        byte[] assertion = constructAssertionData(context);
-        byte[] assertionArray = constructAssertionWebAuthnCbor(Util.KEY_ALIAS_MASTERCARD,assertion,clientDataHash);
-        String assertionStr = Util.bytesToHex(assertionArray);
-        Util.logLongString("assertionObject", assertionStr);
+        clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
+        Util.logLongString(TAG,"ClientData Hex( "+Util.bytesToHex(clientDataHash)+" )");
+        authenticateAndSign(context,true);
+//        byte[] assertion = constructAssertionData(context);
+//        byte[] assertionArray = constructAssertionWebAuthnCbor(Util.KEY_ALIAS_MASTERCARD,assertion,clientDataHash);
+//        String assertionStr = Util.bytesToHex(assertionArray);
+//        Util.logLongString("assertionObject", assertionStr);
 
     }
+
+    public static void authenticateAndSign(FragmentActivity context, boolean isAttestation) {
+        Executor executor = ContextCompat.getMainExecutor(context);
+        Signature signature;
+        try {
+            signature = Signature.getInstance("SHA256withECDSA");
+            signature.initSign((PrivateKey) Util.generateECDSAKeyPair(true));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        // Attach the Signature to a CryptoObject
+        BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(signature);
+
+        // Create the BiometricPrompt
+        BiometricPrompt biometricPrompt = new BiometricPrompt(
+                context,
+                executor,
+                new BiometricPrompt.AuthenticationCallback() {
+                    @Override
+                    public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                        if(isAttestation) {
+                            try {
+                                // Perform attestation after authentication
+                                byte[] attest = constructWebAuthnCbor(result);
+                                String attestStr = Util.bytesToHex(attest);
+                                Util.logLongString("attest", attestStr);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                            authenticateAndSign(context,false);
+                        } else {
+                            try {
+                                // Perform assertion after authentication
+                                byte[] assertion = constructAssertionData(context);
+                                byte[] assertionArray = constructAssertionWebAuthnCbor(Util.KEY_ALIAS_MASTERCARD, assertion, clientDataHash);
+                                String assertionStr = Util.bytesToHex(assertionArray);
+                                Util.logLongString("assertionObject", assertionStr);
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+
+                        }
+                    }
+
+                    @Override
+                    public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        System.err.println("Authentication error: " + errString);
+                    }
+
+                    @Override
+                    public void onAuthenticationFailed() {
+                        System.err.println("Authentication failed.");
+                    }
+                });
+
+        // Create the PromptInfo
+        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Biometric Authentication Required")
+                .setSubtitle("Authenticate to use your private key")
+                .setNegativeButtonText("Cancel") // You can add a fallback button here
+                .build();
+
+        // Start the authentication process
+        biometricPrompt.authenticate(promptInfo, cryptoObject);
+    }
+
+
 
     public static byte[] createCredentialPublicKeyCbor(PublicKey ecdsaPublicKey) throws Exception {
         // Extract ECDSA public key components: modulus (n) and exponent (e)
@@ -215,7 +289,7 @@ public class MastercardAttestation {
         return byteArrayOutputStream.toByteArray();
     }
 
-    public static byte[] constructWebAuthnCbor(String alias, byte[] authenticatorData, byte[] clientDataHash) throws Exception {
+    public static byte[] constructWebAuthnCbor(BiometricPrompt.AuthenticationResult result) throws Exception {
         // Load the Android Keystore
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
@@ -224,15 +298,14 @@ public class MastercardAttestation {
         PrivateKey privateKey = (PrivateKey) Util.generateECDSAKeyPair(true);
 
         // Retrieve the certificate chain
-        Certificate[] certificateChain = keyStore.getCertificateChain(alias);
+        Certificate[] certificateChain = keyStore.getCertificateChain(Util.KEY_ALIAS_MASTERCARD);
         if (certificateChain == null || certificateChain.length == 0) {
-            throw new IllegalStateException("Certificate chain is empty for alias: " + alias);
+            throw new IllegalStateException("Certificate chain is empty for alias: " + Util.KEY_ALIAS_MASTERCARD);
         }
 
         // Perform ECDSA signature using SHA-256 with PSS padding
-        Signature signature = Signature.getInstance("SHA256withECDSA");
-        signature.initSign(privateKey);
-        signature.update(authenticatorData);
+        Signature signature = result.getCryptoObject().getSignature();
+        signature.update(authData);
         signature.update(clientDataHash);
         byte[] signedData = signature.sign();
 
@@ -241,7 +314,7 @@ public class MastercardAttestation {
         List<byte[]> x5cList = new ArrayList<>();
         for (Certificate cert : certificateChain) {
             String certificate = Util.prepareDeviceCertificate(cert.getEncoded());
-            Util.logLongString("x5c:",certificate);
+            System.out.println(certificate);
             x5cList.add(cert.getEncoded());
         }
 
@@ -258,7 +331,7 @@ public class MastercardAttestation {
         Map<String, Object> webAuthnObject = new LinkedHashMap<>();
         webAuthnObject.put("fmt", "android-key");
         webAuthnObject.put("attStmt", attStmt);
-        webAuthnObject.put("authData", authenticatorData);
+        webAuthnObject.put("authData", authData);
 
         // Create CBOR factory and object mapper
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
