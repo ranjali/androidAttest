@@ -49,7 +49,7 @@ public class Attestation {
         byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
         Util.logString(TAG, "credPubKey: " + bytesToHex(credentialPublicKeyCbor) );
 
-        byte[] atData = constructAttestedCredentialData(key, credentialPublicKeyCbor);
+        byte[] atData = Util.constructAttestedCredentialData(key, credentialPublicKeyCbor);
         Util.logString(TAG, "atData: " + bytesToHex(atData) );
 
         authData = constructAuthenticatorData(context, atData);
