@@ -3,9 +3,14 @@ package com.thales.attest;
 import static com.google.android.attestation.Constants.GOOGLE_ROOT_CA_PUB_KEY;
 import static com.google.android.attestation.ParsedAttestationRecord.createParsedAttestationRecord;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.os.Environment;
 
 import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +26,8 @@ import com.google.protobuf.ByteString;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -36,6 +43,7 @@ import java.security.PublicKey;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -55,7 +63,14 @@ public class Attestation {
 
     private static String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
-    public static void test(Context context) throws Exception {
+    private static final int REQUEST_CODE = 1;
+
+    private Context context;
+    public void test(Context mContext) throws Exception {
+        context = mContext;
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions((Activity) context, new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE);
+        }
         PublicKey key =  (PublicKey) Util.getKey(false);
 
         byte[] clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
@@ -72,7 +87,7 @@ public class Attestation {
         Util.logString(TAG, "authData: " + Util.bytesToHex(authData) );
 
 
-        byte[] attest = constructWebAuthnCbor(Util.KEY_ALIAS, authData, clientDataHash);
+        byte[] attest = constructWebAuthnCbor(context, Util.KEY_ALIAS, authData, clientDataHash);
         String attestStr = Util.bytesToHex(attest);
 //        Util.logLongString("attest", attestStr);
 
@@ -237,7 +252,7 @@ public class Attestation {
         return buffer.array();
     }
 
-    public static byte[] constructWebAuthnCbor(String alias, byte[] authenticatorData, byte[] clientDataHash) throws Exception {
+    public byte[] constructWebAuthnCbor(Context context, String alias, byte[] authenticatorData, byte[] clientDataHash) throws Exception {
         // Load the Android Keystore
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
@@ -265,6 +280,19 @@ public class Attestation {
             byte[] certBytes = cert.getEncoded();
             x5cList.add(certBytes);
             Util.logString(TAG, "cert: " + Util.bytesToHex(certBytes));
+        }
+
+        Certificate[] certificateChain1 = getCertificateChainFromBytes(x5cList);
+
+        // Print out the certificate chain
+        for (Certificate cert : certificateChain1) {
+            X509Certificate x509Cert = (X509Certificate) cert;
+            // Define the file name and path
+            File certFile = new File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), String.format("%s.crt",x509Cert.getSerialNumber()));
+            saveCertificateToFile(x509Cert, certFile.getAbsolutePath());
+            System.out.println("Certificate Subject: " + x509Cert.getSubjectDN());
+            System.out.println("Certificate Issuer: " + x509Cert.getIssuerDN());
+            System.out.println("Certificate Serial Number: " + x509Cert.getSerialNumber());
         }
 
         // Create attestation statement
@@ -430,10 +458,40 @@ public class Attestation {
         }
     }
 
-    private static void verifyCertificateChainForValidityRevocationStatusRootOfTrust(List<X509Certificate> certs)
+    private void verifyCertificateChainForValidityRevocationStatusRootOfTrust(List<X509Certificate> certs)
             throws CertificateException, NoSuchAlgorithmException, InvalidKeyException,
             NoSuchProviderException, SignatureException, IOException {
         X509Certificate parent = certs.get(certs.size() - 1);
+
+        // If the attestation is trustworthy and the device ships with hardware-
+        // backed key attestation, Android 7.0 (API level 24) or higher, and
+        // Google Play services, the root certificate should be signed with the
+        // Google attestation root key.
+        byte[] googleRootCaPubKey = Base64.getDecoder().decode(GOOGLE_ROOT_CA_PUB_KEY);
+        String base64EncodedStringOfParentCert = Base64.getEncoder().encodeToString(certs.get(certs.size() - 1).getPublicKey().getEncoded());  //How to get the encoded String back
+        System.out.println(base64EncodedStringOfParentCert);
+        System.out.println(parent.getEncoded());
+
+        // Define the file name and path
+        File certFile = new File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "tmgcertificate.crt");
+
+        // Save the certificate to a file
+        saveCertificateToFile(parent, certFile.getAbsolutePath());
+        if (Arrays.equals(
+                googleRootCaPubKey,
+                certs.get(certs.size() - 1).getPublicKey().getEncoded())) {
+            System.out.println(
+                    "The root certificate is correct, so this attestation is trustworthy, as long as none of"
+                            + " the certificates in the chain have been revoked.");
+        } else {
+            System.out.println(
+                    "The root certificate is NOT correct. The attestation was probably generated by"
+                            + " software, not in secure hardware. This means that there is no guarantee that the"
+                            + " claims within the attestation are correct. If you're using a production-level"
+                            + " system, you should disregard any claims made within this attestation certificate"
+                            + " as there is no authority backing them up.");
+        }
+
         for (int i = certs.size() - 1; i >= 0; i--) {
             X509Certificate cert = certs.get(i);
             // Verify that the certificate has not expired.
@@ -455,25 +513,27 @@ public class Attestation {
                 }
             })));
         }
+    }
 
-        // If the attestation is trustworthy and the device ships with hardware-
-        // backed key attestation, Android 7.0 (API level 24) or higher, and
-        // Google Play services, the root certificate should be signed with the
-        // Google attestation root key.
-        byte[] googleRootCaPubKey = Base64.getDecoder().decode(GOOGLE_ROOT_CA_PUB_KEY);
-        if (Arrays.equals(
-                googleRootCaPubKey,
-                certs.get(certs.size() - 1).getPublicKey().getEncoded())) {
-            System.out.println(
-                    "The root certificate is correct, so this attestation is trustworthy, as long as none of"
-                            + " the certificates in the chain have been revoked.");
-        } else {
-            System.out.println(
-                    "The root certificate is NOT correct. The attestation was probably generated by"
-                            + " software, not in secure hardware. This means that there is no guarantee that the"
-                            + " claims within the attestation are correct. If you're using a production-level"
-                            + " system, you should disregard any claims made within this attestation certificate"
-                            + " as there is no authority backing them up.");
+
+
+    public static void saveCertificateToFile(X509Certificate certificate, String fileName) {
+        try {
+            // Step 1: Serialize the certificate to a byte array
+            byte[] certBytes = certificate.getEncoded();
+
+            // Step 2: Write the byte array to a file
+            FileOutputStream fos = new FileOutputStream(fileName);
+            fos.write(certBytes);
+            fos.close();
+
+            System.out.println("Certificate saved to " + fileName);
+        } catch (CertificateEncodingException e) {
+            System.err.println("Error encoding certificate: " + e.getMessage());
+            e.printStackTrace();
+        } catch (IOException e) {
+            System.err.println("Error writing to file: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

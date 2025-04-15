@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
                     Greeting(
                         name = "Android",
                         modifier = Modifier.padding(innerPadding),
-                        context = this.applicationContext
+                        context = this
                     )
                 }
             }
@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier, context: Context) {
     Text(
-        text = "Hello $name! " + Attestation.test(context),
+        text = "Hello $name! " + Attestation().test(context),
         modifier = modifier
     )
 }
