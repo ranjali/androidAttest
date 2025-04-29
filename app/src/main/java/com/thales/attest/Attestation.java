@@ -16,10 +16,8 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyStore;
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -34,20 +32,21 @@ import java.util.concurrent.Executor;
 public class Attestation {
     public static String TAG = "att2";
 
-    private static String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
+    public static final String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6c83346c2a4ab6322\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
 
     private static byte[] authData;
 
     private static byte[] clientDataHash;
 
-    private static Signature signature;
-
     public static void test(FragmentActivity context) throws Exception {
+        System.out.println("VISA----PackageName---"+Util.bytesToHex(context.getPackageName().getBytes()));
+
+        System.out.println("VISA----Challenge---"+Util.bytesToHex(Util.sha256(CLIENT_DATA.getBytes())));
         PublicKey key =  (PublicKey) Util.getKey(false);
         byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
         Util.logString(TAG, "credPubKey: " + bytesToHex(credentialPublicKeyCbor) );
 
-        byte[] atData = constructAttestedCredentialData(key, credentialPublicKeyCbor);
+        byte[] atData = Util.constructAttestedCredentialData(key, credentialPublicKeyCbor);
         Util.logString(TAG, "atData: " + bytesToHex(atData) );
 
         authData = constructAuthenticatorData(context, atData);
@@ -57,11 +56,6 @@ public class Attestation {
         Util.logString(TAG, "clientDataHash: " + bytesToHex(clientDataHash));
 
         authenticateAndSign(context);
-
-//        constructWebAuthnCbor(authData, clientDataHash);
-//        byte[] attest = constructWebAuthnCbor(Util.KEY_ALIAS, authData, clientDataHash);
-//        String attestStr = bytesToHex(attest);
-//        Util.logLongString("attest", attestStr);
     }
 
     public static byte[] createCredentialPublicKeyCbor(PublicKey rsaPublicKey) throws Exception {
@@ -105,30 +99,6 @@ public class Attestation {
         return cborBytes;
     }
 
-    // Function to construct Attested Credential Data
-    public static byte[] constructAttestedCredentialData(PublicKey publicKey, byte[] credentialPublicKey) throws Exception {
-        // Compute the credentialId as the SHA-256 hash of the encoded publicKey
-        byte[] credentialId = Util.sha256(publicKey.getEncoded());
-
-        // AAGUID is set to 16 bytes of 0
-        byte[] aaguid = new byte[16];
-
-        // Credential ID length (2 bytes)
-        short credentialIdLength = (short) credentialId.length;
-        ByteBuffer credentialIdLengthBuffer = ByteBuffer.allocate(2);
-        credentialIdLengthBuffer.putShort(credentialIdLength);
-        byte[] credentialIdLengthBytes = credentialIdLengthBuffer.array();
-
-        // Construct the Attested Credential Data
-        ByteBuffer buffer = ByteBuffer.allocate(16 + 2 + credentialId.length + credentialPublicKey.length);
-        buffer.put(aaguid);                // AAGUID (16 bytes)
-        buffer.put(credentialIdLengthBytes); // Credential ID length (2 bytes)
-        buffer.put(credentialId);          // Credential ID (32 bytes, derived from SHA-256 of the publicKey)
-        buffer.put(credentialPublicKey); // Credential Public Key (encoded form of the publicKey)
-
-        return buffer.array();
-    }
-
     public static byte[] constructAuthenticatorData(Context context, byte[] credentialData) throws Exception {
         // 1. Retrieve the package name from the context
         String packageName = context.getPackageName();
@@ -156,6 +126,15 @@ public class Attestation {
 
     public static void authenticateAndSign(FragmentActivity context) {
         Executor executor = ContextCompat.getMainExecutor(context);
+        Signature signature;
+        try {
+            signature = Signature.getInstance("SHA256withRSA/PSS");
+            signature.initSign((PrivateKey) Util.getKey(true));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+
         try {
             signature = Signature.getInstance("SHA256withRSA/PSS");
             signature.initSign((PrivateKey) Util.getKey(true));

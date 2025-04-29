@@ -1,0 +1,383 @@
+package com.thales.attest;
+
+import android.content.Context;
+import android.security.keystore.KeyProperties;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentActivity;
+
+import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
+import com.fasterxml.jackson.dataformat.cbor.CBORGenerator;
+
+import java.io.ByteArrayOutputStream;
+import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.cert.Certificate;
+import java.security.spec.ECPublicKeySpec;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executor;
+
+public class MastercardAttestation {
+
+    public static String TAG = "att2_Mastercard";
+
+    private static byte[] authData;
+
+    private static byte[] clientDataHash;
+
+    public static final String CLIENT_DATA = "{\"appInstanceID\":\"05c666b6-c833-46c2-a4ab-6321fc3cfe8c\",\"timeStamp\":\"2024-11-22T12:50:30Z\"}";
+
+
+    public static void test(FragmentActivity context) throws Exception {
+        Util.getAppSigningKey(context);
+        PublicKey key =  (PublicKey) Util.generateECDSAKeyPair(false);
+        byte[] credentialPublicKeyCbor = createCredentialPublicKeyCbor(key);
+        Log.d(TAG, "credPubKey: " + Util.bytesToHex(credentialPublicKeyCbor) );
+
+        Util.logLongString(TAG,"credPubKey Hex( "+Util.bytesToHex(credentialPublicKeyCbor)+" )");
+
+        byte[] atData = Util.constructAttestedCredentialData(key, credentialPublicKeyCbor);
+        Log.d(TAG, "atData: " + Util.bytesToHex(atData) );
+
+        Util.logLongString(TAG,"atData Hex( "+Util.bytesToHex(atData)+" )");
+
+        authData = constructAuthenticatorData(context, atData);
+        Log.d(TAG, "authData: " + Util.bytesToHex(authData) );
+
+        Util.logLongString(TAG,"authData Hex( "+Util.bytesToHex(authData)+" )");
+
+        clientDataHash = Util.sha256(CLIENT_DATA.getBytes(StandardCharsets.UTF_8));
+        Util.logLongString(TAG,"ClientData Hex( "+Util.bytesToHex(clientDataHash)+" )");
+        authenticateAndSign(context,true);
+//        byte[] assertion = constructAssertionData(context);
+//        byte[] assertionArray = constructAssertionWebAuthnCbor(Util.KEY_ALIAS_MASTERCARD,assertion,clientDataHash);
+//        String assertionStr = Util.bytesToHex(assertionArray);
+//        Util.logLongString("assertionObject", assertionStr);
+
+    }
+
+    public static void authenticateAndSign(FragmentActivity context, boolean isAttestation) {
+        Executor executor = ContextCompat.getMainExecutor(context);
+        Signature signature;
+        try {
+            signature = Signature.getInstance("SHA256withECDSA");
+            signature.initSign((PrivateKey) Util.generateECDSAKeyPair(true));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        // Attach the Signature to a CryptoObject
+        BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(signature);
+
+        // Create the BiometricPrompt
+        BiometricPrompt biometricPrompt = new BiometricPrompt(
+                context,
+                executor,
+                new BiometricPrompt.AuthenticationCallback() {
+                    @Override
+                    public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                        if(isAttestation) {
+                            try {
+                                // Perform attestation after authentication
+                                byte[] attest = constructWebAuthnCbor(result);
+                                String attestStr = Util.bytesToHex(attest);
+                                Util.logLongString("attest", attestStr);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                            authenticateAndSign(context,false);
+                        } else {
+                            try {
+                                // Perform assertion after authentication
+                                byte[] assertion = constructAssertionData(context);
+                                byte[] assertionArray = constructAssertionWebAuthnCbor(Util.KEY_ALIAS_MASTERCARD, assertion, clientDataHash);
+                                String assertionStr = Util.bytesToHex(assertionArray);
+                                Util.logLongString("assertionObject", assertionStr);
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+
+                        }
+                    }
+
+                    @Override
+                    public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        System.err.println("Authentication error: " + errString);
+                    }
+
+                    @Override
+                    public void onAuthenticationFailed() {
+                        System.err.println("Authentication failed.");
+                    }
+                });
+
+        // Create the PromptInfo
+        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Biometric Authentication Required")
+                .setSubtitle("Authenticate to use your private key")
+                .setNegativeButtonText("Cancel") // You can add a fallback button here
+                .build();
+
+        // Start the authentication process
+        biometricPrompt.authenticate(promptInfo, cryptoObject);
+    }
+
+
+
+    public static byte[] createCredentialPublicKeyCbor(PublicKey ecdsaPublicKey) throws Exception {
+        // Extract ECDSA public key components: modulus (n) and exponent (e)
+        ECPublicKeySpec ecdsaKeySpec = KeyFactory.getInstance(KeyProperties.KEY_ALGORITHM_EC).getKeySpec(ecdsaPublicKey, ECPublicKeySpec.class);
+        BigInteger modulus = ecdsaKeySpec.getW().getAffineX();
+        BigInteger exponent = ecdsaKeySpec.getW().getAffineY();
+
+        // Convert modulus and exponent to byte arrays
+        byte[] nBytes = modulus.toByteArray();
+        byte[] eBytes = exponent.toByteArray();
+
+        // Parse JSON into a Map
+        Map<Integer, Object> data = new LinkedHashMap<>();
+        data.put(1, 2);
+        data.put(3, -7);
+        data.put(-1, 1);
+        data.put(-2, nBytes);
+        data.put(-3, eBytes);
+
+        CBORFactory cborFactory = new CBORFactory();
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+        // Create CBOR generator with fixed size start
+        try (CBORGenerator cborGenerator = cborFactory.createGenerator(byteArrayOutputStream)) {
+            // Write start object with size (fixed length)
+            cborGenerator.writeStartObject(data.size()); // Pass the fixed length (map size)
+
+            // Write key-value pairs to the CBOR object
+            for (Map.Entry<Integer, Object> entry : data.entrySet()) {
+                cborGenerator.writeFieldId(entry.getKey());
+                cborGenerator.writeObject(entry.getValue());
+            }
+
+            // End the object
+            cborGenerator.writeEndObject();
+        }
+
+        // Convert the updated Map to CBOR
+        byte[] cborBytes = byteArrayOutputStream.toByteArray();
+
+
+        return cborBytes;
+    }
+
+    public static byte[] constructAssertionData(Context context) {
+
+        byte[] rpIdHash;
+        byte flag = 0x5;
+        byte[] signCount;
+        signCount = ByteBuffer.allocate(4).putInt(1).array();
+        String packageName = context.getPackageName();
+        try {
+            rpIdHash =  Util.sha256(packageName.getBytes());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        // RpIdHash 16 bytes + flags 1 byte + SignCount 4 bytes
+        ByteBuffer byteBuffer = ByteBuffer.allocate(rpIdHash.length + 1 + 4);
+        byteBuffer.put(rpIdHash);
+        byteBuffer.put(flag);
+        byteBuffer.put(signCount);
+
+        return byteBuffer.array();
+
+    }
+
+
+    // Function to construct Attested Credential Data
+
+
+    public static byte[] constructAuthenticatorData(Context context, byte[] credentialData) throws Exception {
+        // 1. Retrieve the package name from the context
+        String packageName = context.getPackageName();
+
+        // 2. Compute rpIdHash (SHA-256 of the package name)
+        byte[] rpIdHash = Util.sha256(packageName.getBytes());
+
+        // 3. Flags (set to 0x45)
+        byte flags = 0x45;
+
+        // 4. Sign count (set to 0x00000000)
+        byte[] signCount = ByteBuffer.allocate(4).putInt(0).array();
+
+        // 5. Concatenate all parts to form authenticatorData
+        ByteBuffer buffer = ByteBuffer.allocate(
+                rpIdHash.length + 1 + signCount.length + credentialData.length
+        );
+        buffer.put(rpIdHash);         // rpIdHash (32 bytes)
+        buffer.put(flags);           // Flags (1 byte)
+        buffer.put(signCount);       // Sign Count (4 bytes)
+        buffer.put(credentialData);  // Attested Credential Data (variable length)
+
+        return buffer.array();
+    }
+
+
+    public static byte[] constructAssertionWebAuthnCbor(String alias, byte[] authenticatorData, byte[] clientDataHash) throws Exception {
+        // Load the Android Keystore
+        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+
+        // Retrieve the private key and public key using the alias
+        PrivateKey privateKey = (PrivateKey) Util.generateECDSAKeyPair(true);
+
+        // Retrieve the certificate chain
+        Certificate[] certificateChain = keyStore.getCertificateChain(alias);
+        if (certificateChain == null || certificateChain.length == 0) {
+            throw new IllegalStateException("Certificate chain is empty for alias: " + alias);
+        }
+
+        // Perform ECDSA signature using SHA-256 with PSS padding
+        Signature signature = Signature.getInstance("SHA256withECDSA");
+        signature.initSign(privateKey);
+        signature.update(authenticatorData);
+        signature.update(clientDataHash);
+        byte[] signedData = signature.sign();
+
+        // CBOR factory and mapper
+        CBORFactory cborFactory = new CBORFactory();
+
+
+        // Create WebAuthn object
+        Map<String, Object> webAuthnObject = new LinkedHashMap<>();
+
+        webAuthnObject.put("signature", signedData);
+        webAuthnObject.put("authenticatorData", authenticatorData);
+
+        // Create CBOR factory and object mapper
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+        // Create CBOR generator
+        try (CBORGenerator cborGenerator = cborFactory.createGenerator(byteArrayOutputStream)) {
+            // Write start object without specifying size
+            cborGenerator.writeStartObject(webAuthnObject.size());
+
+            // Write simple key-value pairs
+            for (Map.Entry<String, Object> entry : webAuthnObject.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+
+                cborGenerator.writeFieldName(key);
+                // Handle normal key-value pairs
+                cborGenerator.writeObject(value);
+            }
+
+            // End the main object
+            cborGenerator.writeEndObject();
+        }
+
+        // Output the CBOR encoded byte array
+        return byteArrayOutputStream.toByteArray();
+    }
+
+    public static byte[] constructWebAuthnCbor(BiometricPrompt.AuthenticationResult result) throws Exception {
+        // Load the Android Keystore
+        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+
+        // Retrieve the private key and public key using the alias
+        PrivateKey privateKey = (PrivateKey) Util.generateECDSAKeyPair(true);
+
+        // Retrieve the certificate chain
+        Certificate[] certificateChain = keyStore.getCertificateChain(Util.KEY_ALIAS_MASTERCARD);
+        if (certificateChain == null || certificateChain.length == 0) {
+            throw new IllegalStateException("Certificate chain is empty for alias: " + Util.KEY_ALIAS_MASTERCARD);
+        }
+
+        // Perform ECDSA signature using SHA-256 with PSS padding
+        Signature signature = result.getCryptoObject().getSignature();
+        signature.update(authData);
+        signature.update(clientDataHash);
+        byte[] signedData = signature.sign();
+
+        Util.logLongString(TAG, "Signed Data Hex( "+Util.bytesToHex(signedData)+" )");
+        // Convert x5c (certificate chain) to a list of DER-encoded certificates
+        List<byte[]> x5cList = new ArrayList<>();
+        for (Certificate cert : certificateChain) {
+            String certificate = Util.prepareDeviceCertificate(cert.getEncoded());
+            System.out.println(certificate);
+            x5cList.add(cert.getEncoded());
+        }
+
+        // CBOR factory and mapper
+        CBORFactory cborFactory = new CBORFactory();
+
+        // Create attestation statement
+        Map<String, Object> attStmt = new LinkedHashMap<>();
+        attStmt.put("alg", -7); // ECDSA PSS (ECDSA-PSS using SHA-256, alg value -37 in COSE)
+        attStmt.put("sig", signedData);
+        attStmt.put("x5c", x5cList);
+
+        // Create WebAuthn object
+        Map<String, Object> webAuthnObject = new LinkedHashMap<>();
+        webAuthnObject.put("fmt", "android-key");
+        webAuthnObject.put("attStmt", attStmt);
+        webAuthnObject.put("authData", authData);
+
+        // Create CBOR factory and object mapper
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+        // Create CBOR generator
+        try (CBORGenerator cborGenerator = cborFactory.createGenerator(byteArrayOutputStream)) {
+            // Write start object without specifying size
+            cborGenerator.writeStartObject(webAuthnObject.size());
+
+            // Write simple key-value pairs
+            for (Map.Entry<String, Object> entry : webAuthnObject.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+
+                cborGenerator.writeFieldName(key);
+                if (value instanceof Map) {
+                    cborGenerator.writeStartObject(attStmt.size());
+                    for (Map.Entry<String, Object> subEntry : ((Map<String, Object>) value).entrySet()) {
+                        cborGenerator.writeFieldName(subEntry.getKey());
+                        Object subValue = subEntry.getValue();
+                        if (subValue instanceof List) {
+                            List<byte[]> subValueList = (List<byte[]>) subValue;
+                            // Handle nested array
+                            cborGenerator.writeStartArray(new ArrayList<byte[]>(), subValueList.size());
+                            for (byte[] x5cVal : subValueList) {
+                                cborGenerator.writeBinary(x5cVal);
+                            }
+                            cborGenerator.writeEndArray();
+                        } else {
+                            cborGenerator.writeObject(subValue);
+                        }
+                    }
+                    cborGenerator.writeEndObject();
+                } else {
+                    // Handle normal key-value pairs
+                    cborGenerator.writeObject(value);
+                }
+            }
+
+            // End the main object
+            cborGenerator.writeEndObject();
+        }
+
+        // Output the CBOR encoded byte array
+        return byteArrayOutputStream.toByteArray();
+    }
+
+
+}
